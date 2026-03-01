@@ -1,126 +1,124 @@
-import Anthropic from '@anthropic-ai/sdk';
-import type { UserProfile } from '@/shared/types';
+import type { Settings, UserProfile } from '@/shared/types';
 import { createDefaultProfile } from '@/shared/types';
+import { withProviderFallback, providerTextCompletion } from '@/background/ai/providers';
+import { buildResumeParsePrompt } from '@/background/ai/prompts';
 
-const PARSE_PROMPT = `Parse the following resume text into a structured JSON object.
-Only include information explicitly present in the resume. Do not invent or assume anything.
-If a field is not present, leave it as an empty string or empty array.
-
-Return ONLY valid JSON matching this exact schema (no markdown, no explanation):
-
-{
-  "personal": {
-    "firstName": "",
-    "lastName": "",
-    "email": "",
-    "phone": "",
-    "location": { "city": "", "state": "", "country": "" },
-    "linkedIn": "",
-    "github": "",
-    "portfolio": "",
-    "website": ""
-  },
-  "work": [
-    {
-      "company": "",
-      "title": "",
-      "startDate": "",
-      "endDate": "",
-      "current": false,
-      "description": "",
-      "highlights": []
+export async function parseResumeText(text: string, settings: Settings): Promise<UserProfile> {
+  const prompt = buildResumeParsePrompt(text);
+  const parsed = await withProviderFallback(
+    { settings, taskName: 'resume parsing' },
+    async (provider) => {
+      const raw = await providerTextCompletion(provider, settings, prompt);
+      try {
+        return JSON.parse(extractJson(raw)) as Record<string, unknown>;
+      } catch (error) {
+        throw new Error(`Resume parser returned invalid JSON: ${String(error)}`);
+      }
     }
-  ],
-  "education": [
-    {
-      "school": "",
-      "degree": "",
-      "field": "",
-      "startDate": "",
-      "endDate": "",
-      "gpa": ""
-    }
-  ],
-  "skills": [],
-  "certifications": [],
-  "languages": [{ "language": "", "proficiency": "" }]
-}
+  );
 
-Resume text:
-`;
-
-export async function parseResumeText(
-  text: string,
-  apiKey: string
-): Promise<UserProfile> {
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    messages: [
-      {
-        role: 'user',
-        content: PARSE_PROMPT + text,
-      },
-    ],
-  });
-
-  const content = response.content[0];
-  if (content.type !== 'text') {
-    throw new Error('Unexpected response format from API');
-  }
-
-  const parsed = JSON.parse(content.text);
   const profile = createDefaultProfile();
 
   // Merge parsed data into profile, keeping defaults for missing fields
   if (parsed.personal) {
-    Object.assign(profile.personal, parsed.personal);
-    if (parsed.personal.location) {
-      Object.assign(profile.personal.location, parsed.personal.location);
+    const personal = asRecord(parsed.personal);
+    if (personal) {
+      Object.assign(profile.personal, {
+        firstName: toStringValue(personal.firstName),
+        lastName: toStringValue(personal.lastName),
+        email: toStringValue(personal.email),
+        phone: toStringValue(personal.phone),
+        linkedIn: toStringValue(personal.linkedIn),
+        github: toStringValue(personal.github),
+        portfolio: toStringValue(personal.portfolio),
+        website: toStringValue(personal.website),
+      });
+
+      const location = asRecord(personal.location);
+      if (location) {
+        Object.assign(profile.personal.location, {
+          city: toStringValue(location.city),
+          state: toStringValue(location.state),
+          country: toStringValue(location.country),
+        });
+      }
     }
   }
 
   if (Array.isArray(parsed.work)) {
-    profile.work = parsed.work.map((w: Record<string, unknown>, i: number) => ({
+    profile.work = parsed.work.map((item, i: number) => {
+      const w = asRecord(item);
+      return {
       id: `work-${i}`,
-      company: w.company ?? '',
-      title: w.title ?? '',
-      startDate: w.startDate ?? '',
-      endDate: w.endDate ?? '',
-      current: w.current ?? false,
-      description: w.description ?? '',
-      highlights: Array.isArray(w.highlights) ? w.highlights : [],
-    }));
+      company: toStringValue(w?.company),
+      title: toStringValue(w?.title),
+      startDate: toStringValue(w?.startDate),
+      endDate: toStringValue(w?.endDate),
+      current: toBooleanValue(w?.current),
+      description: toStringValue(w?.description),
+      highlights: Array.isArray(w?.highlights)
+        ? w.highlights.map((entry) => toStringValue(entry)).filter(Boolean)
+        : [],
+      };
+    });
   }
 
   if (Array.isArray(parsed.education)) {
-    profile.education = parsed.education.map((e: Record<string, unknown>, i: number) => ({
+    profile.education = parsed.education.map((item, i: number) => {
+      const e = asRecord(item);
+      return {
       id: `edu-${i}`,
-      school: e.school ?? '',
-      degree: e.degree ?? '',
-      field: e.field ?? '',
-      startDate: e.startDate ?? '',
-      endDate: e.endDate ?? '',
-      gpa: e.gpa ?? '',
-    }));
+      school: toStringValue(e?.school),
+      degree: toStringValue(e?.degree),
+      field: toStringValue(e?.field),
+      startDate: toStringValue(e?.startDate),
+      endDate: toStringValue(e?.endDate),
+      gpa: toStringValue(e?.gpa),
+      };
+    });
   }
 
   if (Array.isArray(parsed.skills)) {
-    profile.skills = parsed.skills;
+    profile.skills = parsed.skills.map((skill) => toStringValue(skill)).filter(Boolean);
   }
 
   if (Array.isArray(parsed.certifications)) {
-    profile.certifications = parsed.certifications;
+    profile.certifications = parsed.certifications
+      .map((certification) => toStringValue(certification))
+      .filter(Boolean);
   }
 
   if (Array.isArray(parsed.languages)) {
-    profile.languages = parsed.languages.map((l: Record<string, unknown>) => ({
-      language: l.language ?? '',
-      proficiency: l.proficiency ?? '',
-    }));
+    profile.languages = parsed.languages.map((item) => {
+      const l = asRecord(item);
+      return {
+        language: toStringValue(l?.language),
+        proficiency: toStringValue(l?.proficiency),
+      };
+    });
   }
 
   return profile;
+}
+
+function extractJson(text: string): string {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('No JSON object found in model output.');
+  }
+  return text.slice(start, end + 1);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') return null;
+  return value as Record<string, unknown>;
+}
+
+function toStringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function toBooleanValue(value: unknown): boolean {
+  return typeof value === 'boolean' ? value : false;
 }

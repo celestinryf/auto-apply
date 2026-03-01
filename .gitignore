@@ -29,6 +29,8 @@ pnpm-debug.log*
 # Test and coverage artifacts
 coverage/
 .nyc_output/
+playwright-report/
+test-results/
 
 # Cache and temp
 .cache/
@@ -48,6 +50,9 @@ tmp/
 # OS files
 .DS_Store
 Thumbs.db
+
+# IndexedDB test artifacts
+.indexeddb/
 
 # Local project settings
 .claude/settings.local.json

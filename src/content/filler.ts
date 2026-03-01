@@ -1,8 +1,15 @@
-import type { ATSAdapter, UserProfile, FillResult } from '@/shared/types';
+import type { FormAdapter, UserProfile, FillResult } from '@/shared/types';
 import { mapFieldToProfile, getProfileValue } from './fieldMapper';
 
-export function fillForm(adapter: ATSAdapter, profile: UserProfile): FillResult {
-  const fields = adapter.getFields();
+export function fillForm(adapter: FormAdapter, profile: UserProfile): FillResult {
+  return fillDeterministicFields(adapter, profile);
+}
+
+export function fillDeterministicFields(
+  adapter: FormAdapter,
+  profile: UserProfile
+): FillResult {
+  const fields = adapter.getFields().filter((field) => field.type !== 'textarea');
   const result: FillResult = {
     total: fields.length,
     filled: 0,

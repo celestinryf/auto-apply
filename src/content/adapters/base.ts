@@ -1,9 +1,7 @@
-import type { ATSAdapter, FormField } from '@/shared/types';
+import type { FormAdapter, FormField } from '@/shared/types';
 
-export abstract class BaseAdapter implements ATSAdapter {
+export abstract class BaseAdapter implements FormAdapter {
   abstract name: string;
-
-  abstract detect(): boolean;
 
   abstract getFields(): FormField[];
 
@@ -114,10 +112,13 @@ export abstract class BaseAdapter implements ATSAdapter {
     const ariaLabel = el.getAttribute('aria-label');
     if (ariaLabel) return ariaLabel.trim();
 
-    // 3. Check aria-labelledby
+    // 3. Check aria-labelledby (resolve within shadow root or document)
     const labelledBy = el.getAttribute('aria-labelledby');
     if (labelledBy) {
-      const labelEl = document.getElementById(labelledBy);
+      const root = el.getRootNode() as Document | ShadowRoot;
+      const escaped = CSS.escape(labelledBy);
+      const labelEl =
+        root.querySelector?.(`#${escaped}`) ?? document.getElementById(labelledBy);
       if (labelEl) return labelEl.textContent?.trim() ?? '';
     }
 
@@ -146,6 +147,7 @@ export abstract class BaseAdapter implements ATSAdapter {
         case 'date': return 'date';
         case 'checkbox': return 'checkbox';
         case 'radio': return 'radio';
+        case 'file': return 'file';
         default: return 'text';
       }
     }

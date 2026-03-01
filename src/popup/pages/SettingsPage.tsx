@@ -1,10 +1,12 @@
 import { signal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
-import { getApiKey, saveApiKey } from '@/storage/index';
+import { getSettings, saveSettings } from '@/storage/index';
+import { createDefaultSettings, type Settings } from '@/shared/types';
 
-const apiKey = signal('');
+const settings = signal<Settings>(createDefaultSettings());
 const status = signal<{ type: 'success' | 'error'; message: string } | null>(null);
-const showKey = signal(false);
+const showAnthropicKey = signal(false);
+const showOpenAiKey = signal(false);
 
 export function SettingsPage() {
   useEffect(() => {
@@ -13,19 +15,19 @@ export function SettingsPage() {
 
   async function loadSettings() {
     try {
-      apiKey.value = await getApiKey();
+      settings.value = await getSettings();
     } catch (err) {
       console.error('Failed to load settings:', err);
     }
   }
 
-  async function handleSaveKey() {
+  async function handleSaveSettings() {
     try {
-      await saveApiKey(apiKey.value);
-      status.value = { type: 'success', message: 'API key saved!' };
+      await saveSettings(settings.value);
+      status.value = { type: 'success', message: 'Settings saved!' };
       setTimeout(() => (status.value = null), 2000);
     } catch (err) {
-      status.value = { type: 'error', message: 'Failed to save API key' };
+      status.value = { type: 'error', message: 'Failed to save settings' };
     }
   }
 
@@ -40,29 +42,75 @@ export function SettingsPage() {
       <div class="form-section">
         <div class="form-section-title">API Configuration</div>
         <p style="font-size: 12px; color: #6b7280; margin-bottom: 12px">
-          An Anthropic API key is required for resume parsing and AI-powered form filling.
-          Your key is stored locally and never sent to our servers.
+          Resume parsing and free-text generation use Anthropic/OpenAI with provider fallback.
+          Keys stay in local extension storage.
         </p>
+        <div class="form-group">
+          <label class="form-label">Primary Provider</label>
+          <select
+            class="form-select"
+            value={settings.value.primaryProvider}
+            onChange={(e) =>
+              (settings.value = {
+                ...settings.value,
+                primaryProvider: (e.target as HTMLSelectElement).value as
+                  | 'anthropic'
+                  | 'openai',
+              })
+            }
+          >
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
         <div class="form-group">
           <label class="form-label">Anthropic API Key</label>
           <div style="display: flex; gap: 8px">
             <input
               class="form-input"
-              type={showKey.value ? 'text' : 'password'}
-              value={apiKey.value}
+              type={showAnthropicKey.value ? 'text' : 'password'}
+              value={settings.value.anthropicApiKey}
               placeholder="sk-ant-..."
-              onInput={(e) => (apiKey.value = (e.target as HTMLInputElement).value)}
+              onInput={(e) =>
+                (settings.value = {
+                  ...settings.value,
+                  anthropicApiKey: (e.target as HTMLInputElement).value,
+                })
+              }
             />
             <button
               class="btn btn-secondary btn-sm"
-              onClick={() => (showKey.value = !showKey.value)}
+              onClick={() => (showAnthropicKey.value = !showAnthropicKey.value)}
             >
-              {showKey.value ? 'Hide' : 'Show'}
+              {showAnthropicKey.value ? 'Hide' : 'Show'}
             </button>
           </div>
         </div>
-        <button class="btn btn-primary" onClick={handleSaveKey}>
-          Save API Key
+        <div class="form-group">
+          <label class="form-label">OpenAI API Key</label>
+          <div style="display: flex; gap: 8px">
+            <input
+              class="form-input"
+              type={showOpenAiKey.value ? 'text' : 'password'}
+              value={settings.value.openaiApiKey}
+              placeholder="sk-proj-..."
+              onInput={(e) =>
+                (settings.value = {
+                  ...settings.value,
+                  openaiApiKey: (e.target as HTMLInputElement).value,
+                })
+              }
+            />
+            <button
+              class="btn btn-secondary btn-sm"
+              onClick={() => (showOpenAiKey.value = !showOpenAiKey.value)}
+            >
+              {showOpenAiKey.value ? 'Hide' : 'Show'}
+            </button>
+          </div>
+        </div>
+        <button class="btn btn-primary" onClick={handleSaveSettings}>
+          Save Settings
         </button>
       </div>
 

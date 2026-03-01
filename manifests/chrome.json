@@ -3,20 +3,14 @@
   "name": "Auto Apply",
   "version": "0.1.0",
   "description": "Auto-fill job applications with your profile data",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*"
+  ],
   "background": {
     "service_worker": "src/background/index.ts"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "*://boards.greenhouse.io/*",
-        "*://*.greenhouse.io/*"
-      ],
-      "js": ["src/content/index.ts"],
-      "run_at": "document_idle"
-    }
-  ],
   "action": {
     "default_popup": "src/popup/index.html",
     "default_icon": {
